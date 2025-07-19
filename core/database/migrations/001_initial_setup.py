@@ -13,7 +13,7 @@ def up(cursor: sqlite3.Cursor):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fish (
             fish_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, description TEXT,
-            rarity INTEGER NOT NULL CHECK (rarity >= 1 AND rarity <= 5), base_value INTEGER NOT NULL,
+            rarity INTEGER NOT NULL CHECK (rarity >= 1 AND rarity <= 6), base_value INTEGER NOT NULL,
             min_weight INTEGER NOT NULL CHECK (min_weight >= 0), max_weight INTEGER NOT NULL CHECK (max_weight > min_weight),
             icon_url TEXT
         )
