@@ -43,7 +43,7 @@ from .utils import get_public_ip, to_percentage, format_accessory_or_rod, safe_d
 @register("fish2.0",
           "tinker",
           "升级版的钓鱼插件，附带后台管理界面（个性化钓鱼游戏！）",
-          "1.3.12",
+          "1.3.14",
           "https://github.com/tinkerbellqwq/astrbot_plugin_fishing")
 class FishingPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -1234,6 +1234,61 @@ class FishingPlugin(Star):
         result = self.user_service.modify_user_coins(target_user_id, int(coins))
         if result:
             yield event.plain_result(f"✅ 成功修改用户 {target_user_id} 的金币数量为 {coins} 金币")
+        else:
+            yield event.plain_result("❌ 出错啦！请稍后再试。")
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @filter.command("奖励金币")
+    async def reward_coins(self, event: AstrMessageEvent):
+        """奖励用户金币"""
+        args = event.message_str.split(" ")
+        if len(args) < 3:
+            yield event.plain_result("❌ 请指定要奖励的用户 ID 和金币数量，例如：/奖励金币 123456789 1000")
+            return
+        target_user_id = args[1]
+        if not target_user_id.isdigit():
+            yield event.plain_result("❌ 用户 ID 必须是数字，请检查后重试。")
+            return
+        coins = args[2]
+        if not coins.isdigit():
+            yield event.plain_result("❌ 金币数量必须是数字，请检查后重试。")
+            return
+        current_coins = self.user_service.get_user_currency(target_user_id)
+        if current_coins is None:
+            yield event.plain_result("❌ 用户不存在或未注册，请检查后重试。")
+            return
+        result = self.user_service.modify_user_coins(target_user_id, int(current_coins.get('coins') + int(coins)))
+        if result:
+            yield event.plain_result(f"✅ 成功给用户 {target_user_id} 奖励 {coins} 金币")
+        else:
+            yield event.plain_result("❌ 出错啦！请稍后再试。")
+
+    @filter.permission_type(PermissionType.ADMIN)
+    @filter.command("扣除金币")
+    async def deduct_coins(self, event: AstrMessageEvent):
+        """扣除用户金币"""
+        args = event.message_str.split(" ")
+        if len(args) < 3:
+            yield event.plain_result("❌ 请指定要扣除的用户 ID 和金币数量，例如：/扣除金币 123456789 1000")
+            return
+        target_user_id = args[1]
+        if not target_user_id.isdigit():
+            yield event.plain_result("❌ 用户 ID 必须是数字，请检查后重试。")
+            return
+        coins = args[2]
+        if not coins.isdigit():
+            yield event.plain_result("❌ 金币数量必须是数字，请检查后重试。")
+            return
+        current_coins = self.user_service.get_user_currency(target_user_id)
+        if current_coins is None:
+            yield event.plain_result("❌ 用户不存在或未注册，请检查后重试。")
+            return
+        if int(coins) > current_coins.get('coins'):
+            yield event.plain_result("❌ 扣除的金币数量不能超过用户当前拥有的金币数量")
+            return
+        result = self.user_service.modify_user_coins(target_user_id, int(current_coins.get('coins') - int(coins)))
+        if result:
+            yield event.plain_result(f"✅ 成功扣除用户 {target_user_id} 的 {coins} 金币")
         else:
             yield event.plain_result("❌ 出错啦！请稍后再试。")
 
