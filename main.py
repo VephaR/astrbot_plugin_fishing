@@ -43,7 +43,7 @@ from .utils import get_public_ip, to_percentage, format_accessory_or_rod, safe_d
 @register("fish2.0",
           "tinker",
           "升级版的钓鱼插件，附带后台管理界面（个性化钓鱼游戏！）",
-          "1.3.14",
+          "1.3.12",
           "https://github.com/tinkerbellqwq/astrbot_plugin_fishing")
 class FishingPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -286,7 +286,7 @@ class FishingPlugin(Star):
             for rarity in sorted(fished_by_rarity.keys(), reverse=True):
                 fish_list = fished_by_rarity[rarity]
                 if fish_list:
-                    message += f"\n {'⭐' * rarity } 稀有度 {rarity}：\n"
+                    message += f"\n★ 稀有度{rarity} ({'★' * rarity})\n"
                     for fish in fish_list:
                         message += f"  - {fish['name']} x  {fish['quantity']} （{fish['base_value']}金币 / 个） \n"
             message += f"\n🐟 总鱼数：{pond_fish['stats']['total_count']} 条\n"
@@ -483,8 +483,8 @@ class FishingPlugin(Star):
             yield event.plain_result("❌ 请指定要出售的稀有度，例如：/出售稀有度 3")
             return
         rarity = args[1]
-        if not rarity.isdigit() or int(rarity) < 1 or int(rarity) > 5:
-            yield event.plain_result("❌ 稀有度必须是1到5之间的数字，请检查后重试。")
+        if not rarity.isdigit() or int(rarity) < 1 or int(rarity) > 6:
+            yield event.plain_result("❌ 稀有度必须是1到6之间的数字，请检查后重试。")
             return
         result = self.inventory_service.sell_fish_by_rarity(user_id, int(rarity))
         if result:
@@ -1146,32 +1146,72 @@ class FishingPlugin(Star):
     async def fish_pokedex(self, event: AstrMessageEvent):
         """查看鱼类图鉴"""
         user_id = event.get_sender_id()
-        result = self.fishing_service.get_user_pokedex(user_id)
+        args = event.message_str.split(" ")
+        
+        if len(args) < 2:
+            result = self.fishing_service.get_user_pokedex(user_id)
+            if result:
+                if result["success"]:
+                    pokedex = result.get("pokedex", [])
+                    if not pokedex:
+                        yield event.plain_result("❌ 您还没有捕捉到任何鱼类，快去钓鱼吧！")
+                        return
 
-        if result:
-            if result["success"]:
-                pokedex = result.get("pokedex", [])
-                if not pokedex:
-                    yield event.plain_result("❌ 您还没有捕捉到任何鱼类，快去钓鱼吧！")
-                    return
+                    message = "【🐟 🌊 鱼类图鉴 📖 🎣】\n\n"
+                    message += f"🏆 解锁进度：{to_percentage(1.0 + result['unlocked_percentage'])}\n"
+                    message += f"📊 收集情况：{result['unlocked_fish_count']} / {result['total_fish_count']} 种\n"
 
-                message = "【🐟 🌊 鱼类图鉴 📖 🎣】\n"
-                message += f"🏆 解锁进度：{to_percentage(1.0 + result['unlocked_percentage'])}\n"
-                message += f"📊 收集情况：{result['unlocked_fish_count']} / {result['total_fish_count']} 种\n"
-
-                for fish in pokedex:
-                    rarity = fish["rarity"]
-
-                    message += f" - {fish['name']} ({'✨' * rarity})\n"
-                    message += f"💎 价值：{fish['value']} 金币\n"
-                    message += f"🕰️ 首次捕获：{safe_datetime_handler(fish['first_caught_time'])}\n"
-                    message += f"📜 描述：{fish['description']}\n"
-
-                yield event.plain_result(message)
+                    rarity_count = -1
+                    for fish in pokedex:
+                        rarity = fish["rarity"]
+                        if rarity_count == -1:
+                            rarity_count = rarity
+                        if rarity == rarity_count:
+                            message += f"\n★ 稀有度{rarity_count} ({'★' * rarity_count})\n"
+                            rarity_count -= 1
+                            num_count = 0
+                        message += f" - {fish['name']}\n"
+                        message += f"💎 价值：{fish['value']} 金币\n"
+                        message += f"🕰️ 首次捕获：{safe_datetime_handler(fish['first_caught_time'])}\n"
+                        message += f"📜 描述：{fish['description']}\n"
+                        num_count += 1
+                        if num_count == 5:
+                            message += f"... 等共{result['rarity_fish_count'][5 - rarity_count]}种\n"
+                        
+                    yield event.plain_result(message)
+                else:
+                    yield event.plain_result(f"❌ 查看鱼类图鉴失败：{result['message']}")
             else:
-                yield event.plain_result(f"❌ 查看鱼类图鉴失败：{result['message']}")
+                yield event.plain_result("❌ 出错啦！请稍后再试。")
         else:
-            yield event.plain_result("❌ 出错啦！请稍后再试。")
+            rarity = args[1]
+            if not rarity.isdigit() or int(rarity) < 1 or int(rarity) > 6:
+                yield event.plain_result("❌ 稀有度必须是1到6之间的数字，请检查后重试。")
+                return
+            result = self.fishing_service.get_user_pokedex(user_id)
+            if result:
+                if result["success"]:
+                    pokedex_rarity = result.get("pokedex_rarity", [])
+                    if not pokedex_rarity[int(rarity) - 1]:
+                        yield event.plain_result("❌ 您还没有捕捉到该稀有度的任何鱼类，快去钓鱼吧！")
+                        return
+
+                    message = "【🐟 🌊 鱼类图鉴 📖 🎣】\n\n"
+                    message += f"🏆 解锁进度：{to_percentage(1.0 + result['unlocked_percentage'])}\n"
+                    message += f"📊 收集情况：{result['unlocked_fish_count']} / {result['total_fish_count']} 种\n"
+                    message += f"\n★ 稀有度{int(rarity)} ({'★' * int(rarity)})\n"
+                    for fish in pokedex_rarity[int(rarity) - 1]:
+                        message += f" - {fish['name']}\n"
+                        message += f"💎 价值：{fish['value']} 金币\n"
+                        message += f"🕰️ 首次捕获：{safe_datetime_handler(fish['first_caught_time'])}\n"
+                        message += f"📜 描述：{fish['description']}\n"
+                        
+                    yield event.plain_result(message)
+                else:
+                    yield event.plain_result(f"❌ 查看鱼类图鉴失败：{result['message']}")
+            else:
+                yield event.plain_result("❌ 出错啦！请稍后再试。")
+    
     # ===========管理后台==========
 
     @filter.permission_type(PermissionType.ADMIN)
@@ -1194,61 +1234,6 @@ class FishingPlugin(Star):
         result = self.user_service.modify_user_coins(target_user_id, int(coins))
         if result:
             yield event.plain_result(f"✅ 成功修改用户 {target_user_id} 的金币数量为 {coins} 金币")
-        else:
-            yield event.plain_result("❌ 出错啦！请稍后再试。")
-
-    @filter.permission_type(PermissionType.ADMIN)
-    @filter.command("奖励金币")
-    async def reward_coins(self, event: AstrMessageEvent):
-        """奖励用户金币"""
-        args = event.message_str.split(" ")
-        if len(args) < 3:
-            yield event.plain_result("❌ 请指定要奖励的用户 ID 和金币数量，例如：/奖励金币 123456789 1000")
-            return
-        target_user_id = args[1]
-        if not target_user_id.isdigit():
-            yield event.plain_result("❌ 用户 ID 必须是数字，请检查后重试。")
-            return
-        coins = args[2]
-        if not coins.isdigit():
-            yield event.plain_result("❌ 金币数量必须是数字，请检查后重试。")
-            return
-        current_coins = self.user_service.get_user_currency(target_user_id)
-        if current_coins is None:
-            yield event.plain_result("❌ 用户不存在或未注册，请检查后重试。")
-            return
-        result = self.user_service.modify_user_coins(target_user_id, int(current_coins.get('coins') + int(coins)))
-        if result:
-            yield event.plain_result(f"✅ 成功给用户 {target_user_id} 奖励 {coins} 金币")
-        else:
-            yield event.plain_result("❌ 出错啦！请稍后再试。")
-
-    @filter.permission_type(PermissionType.ADMIN)
-    @filter.command("扣除金币")
-    async def deduct_coins(self, event: AstrMessageEvent):
-        """扣除用户金币"""
-        args = event.message_str.split(" ")
-        if len(args) < 3:
-            yield event.plain_result("❌ 请指定要扣除的用户 ID 和金币数量，例如：/扣除金币 123456789 1000")
-            return
-        target_user_id = args[1]
-        if not target_user_id.isdigit():
-            yield event.plain_result("❌ 用户 ID 必须是数字，请检查后重试。")
-            return
-        coins = args[2]
-        if not coins.isdigit():
-            yield event.plain_result("❌ 金币数量必须是数字，请检查后重试。")
-            return
-        current_coins = self.user_service.get_user_currency(target_user_id)
-        if current_coins is None:
-            yield event.plain_result("❌ 用户不存在或未注册，请检查后重试。")
-            return
-        if int(coins) > current_coins.get('coins'):
-            yield event.plain_result("❌ 扣除的金币数量不能超过用户当前拥有的金币数量")
-            return
-        result = self.user_service.modify_user_coins(target_user_id, int(current_coins.get('coins') - int(coins)))
-        if result:
-            yield event.plain_result(f"✅ 成功扣除用户 {target_user_id} 的 {coins} 金币")
         else:
             yield event.plain_result("❌ 出错啦！请稍后再试。")
 
