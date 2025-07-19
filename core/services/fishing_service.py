@@ -133,11 +133,6 @@ class FishingService:
                 if bait_expiry_time:
                     now = get_now()
                     expiry_time = bait_expiry_time + timedelta(minutes=bait_template.duration_minutes)
-                    # 移除两个时间的时区信息
-                    if now.tzinfo is not None:
-                        now = now.replace(tzinfo=None)
-                    if expiry_time.tzinfo is not None:
-                        expiry_time = expiry_time.replace(tzinfo=None)
                     if now > expiry_time:
                         # 鱼饵已过期，清除当前鱼饵
                         user.current_bait_id = None
@@ -145,15 +140,8 @@ class FishingService:
                         self.user_repo.update(user)
                         return {"success": False, "message": "❌ 鱼饵已过期，请重新使用鱼饵。"}
             else:
-                if bait_template:
-                    # 如果鱼饵没有设置持续时间, 是一次性鱼饵，消耗一个鱼饵
-                    self.inventory_repo.update_bait_quantity(user_id, user.current_bait_id, -1)
-                else:
-                    # 如果鱼饵模板不存在，清除当前鱼饵
-                    user.current_bait_id = None
-                    user.bait_start_time = None
-                    self.user_repo.update(user)
-                    logger.warning(f"用户 {user_id} 的当前鱼饵已被清除，因为鱼饵模板不存在。")
+                # 如果鱼饵没有设置持续时间, 是一次性鱼饵，消耗一个鱼饵
+                self.inventory_repo.update_bait_quantity(user_id, user.current_bait_id, -1)
 
 
         # 3. 判断是否成功钓到
@@ -166,9 +154,9 @@ class FishingService:
         # 4. 成功，生成渔获
         # 设置稀有度分布
         rarity_weights = {
-            1: [0.5, 0.25, 0.10, 0.01, 0],  # 区域一：4星概率极低，5星为0
-            2: [0.5, 0.3, 0.16, 0.039, 0.001],  # 区域二：提升4星，引入极低概率5星
-            3: [0.5, 0.3, 0.15, 0.045, 0.005]  # 区域三：大幅提升4星和5星
+            1: [0.5, 0.35, 0.14, 0.01, 0, 0],  # 区域一：4星概率极低，5星为0
+            2: [0.5, 0.3, 0.16, 0.038, 0.001, 0.001],  # 区域二：提升4星，引入极低概率5星
+            3: [0.5, 0.3, 0.15, 0.044, 0.003, 0.003]  # 区域三：大幅提升4星和5星
         }
         current_weights = rarity_weights.get(user.fishing_zone_id, rarity_weights[1])
         # 根据权重生成稀有度
@@ -185,12 +173,13 @@ class FishingService:
         if not is_rare_fish_available:
             # 如果稀有鱼已达上限，则将5星鱼的权重设为0
             rarity_distribution[4] = 0.0
+            rarity_distribution[5] = 0.0
             # 重新归一化概率分布
             total = sum(rarity_distribution)
             if total > 0:
                 rarity_distribution = [x / total for x in rarity_distribution]
         rarity = random.choices(
-            [1, 2, 3, 4, 5],
+            [1, 2, 3, 4, 5, 6],
             weights=rarity_distribution,
             k=1
         )[0]
@@ -212,7 +201,7 @@ class FishingService:
             if random.random() < garbage_reduction_modifier:
                 # 重新选择一条鱼
                 new_rarity = random.choices(
-                    [1, 2, 3, 4, 5],
+                    [1, 2, 3, 4, 5, 6],
                     weights=rarity_distribution,
                     k=1
                 )[0]
@@ -252,19 +241,6 @@ class FishingService:
         user.last_fishing_time = get_now()
         self.user_repo.update(user)
 
-        # 判断用户的鱼竿和饰品是否真实存在
-        if user.equipped_rod_instance_id:
-            rod_instance = self.inventory_repo.get_user_rod_instance_by_id(user.user_id, user.equipped_rod_instance_id)
-            if not rod_instance:
-                user.equipped_rod_instance_id = None
-        if user.equipped_accessory_instance_id:
-            accessory_instance = self.inventory_repo.get_user_accessory_instance_by_id(user.user_id, user.equipped_accessory_instance_id)
-            if not accessory_instance:
-                user.equipped_accessory_instance_id = None
-
-        # 更新用户信息
-        self.user_repo.update(user)
-
         # 记录日志
         record = FishingRecord(
             record_id=0, # DB自增
@@ -290,6 +266,40 @@ class FishingService:
             }
         }
 
+    # def get_user_pokedex(self, user_id: str) -> Dict[str, Any]:
+    #     """获取用户的图鉴信息。"""
+    #     user = self.user_repo.get_by_id(user_id)
+    #     if not user:
+    #         return {"success": False, "message": "用户不存在"}
+
+    #     pokedex_ids = self.log_repo.get_unlocked_fish_ids(user_id)
+    #     # Dict[int, datetime]: 键为鱼类ID，值为首次捕获时间
+    #     if not pokedex_ids:
+    #         return {"success": True, "pokedex": []}
+    #     all_fish_count = len(self.item_template_repo.get_all_fish())
+    #     unlock_fish_count = len(pokedex_ids)
+    #     pokedex = []
+    #     for fish_id, first_caught_time in pokedex_ids.items():
+    #         fish_template = self.item_template_repo.get_fish_by_id(fish_id)
+    #         if fish_template:
+    #             pokedex.append({
+    #                 "fish_id": fish_id,
+    #                 "name": fish_template.name,
+    #                 "rarity": fish_template.rarity,
+    #                 "description": fish_template.description,
+    #                 "value": fish_template.base_value,
+    #                 "first_caught_time": first_caught_time
+    #             })
+    #     # 将图鉴按稀有度从大到小排序
+    #     pokedex.sort(key=lambda x: x["rarity"], reverse=True)
+    #     return {
+    #         "success": True,
+    #         "pokedex": pokedex,
+    #         "total_fish_count": all_fish_count,
+    #         "unlocked_fish_count": unlock_fish_count,
+    #         "unlocked_percentage": (unlock_fish_count / all_fish_count) if all_fish_count > 0 else 0
+    # }
+    
     def get_user_pokedex(self, user_id: str) -> Dict[str, Any]:
         """获取用户的图鉴信息。"""
         user = self.user_repo.get_by_id(user_id)
@@ -303,23 +313,38 @@ class FishingService:
         all_fish_count = len(self.item_template_repo.get_all_fish())
         unlock_fish_count = len(pokedex_ids)
         pokedex = []
+        pokedex_rarity = [[], [], [], [], [], []]
         for fish_id, first_caught_time in pokedex_ids.items():
             fish_template = self.item_template_repo.get_fish_by_id(fish_id)
-            if fish_template:
-                pokedex.append({
-                    "fish_id": fish_id,
-                    "name": fish_template.name,
-                    "rarity": fish_template.rarity,
-                    "description": fish_template.description,
-                    "value": fish_template.base_value,
-                    "first_caught_time": first_caught_time
-                })
+            for rarity in range(1, 7):
+                if fish_template and fish_template.rarity is rarity:
+                    pokedex_rarity[rarity - 1].append({
+                        "fish_id": fish_id,
+                        "name": fish_template.name,
+                        "rarity": fish_template.rarity,
+                        "description": fish_template.description,
+                        "value": fish_template.base_value,
+                        "first_caught_time": first_caught_time
+                    })
+        
         # 将图鉴按稀有度从大到小排序
-        pokedex.sort(key=lambda x: x["rarity"], reverse=True)
+        # pokedex.sort(key=lambda x: x["rarity"], reverse=True)
+        rarity_fish_count = []
+        for rarity in range(6, 0, -1):
+            count = 1
+            rarity_fish_count.append(len(pokedex_rarity[rarity - 1]))
+            for fish in pokedex_rarity[rarity - 1]:
+                if count <= 5:
+                    pokedex.append(fish)
+                    count += 1
+                else: break
+        
         return {
             "success": True,
             "pokedex": pokedex,
+            "pokedex_rarity": pokedex_rarity,
             "total_fish_count": all_fish_count,
+            "rarity_fish_count": rarity_fish_count,
             "unlocked_fish_count": unlock_fish_count,
             "unlocked_percentage": (unlock_fish_count / all_fish_count) if all_fish_count > 0 else 0
     }
@@ -548,7 +573,4 @@ class FishingService:
 
             except Exception as e:
                 logger.error(f"自动钓鱼任务出错: {e}")
-                # 打印堆栈信息
-                import traceback
-                logger.error(traceback.format_exc())
                 time.sleep(60)
